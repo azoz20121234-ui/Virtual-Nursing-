@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Virtual Nursing Command Center | Saudi Health Cluster</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            command: '#090d16',
+            panel: '#101827',
+            panel2: '#0d1320',
+            clinical: '#24f2a6',
+            neon: '#27d4ff',
+            amber: '#fbbf24',
+            danger: '#ff4d6d'
+          },
+          boxShadow: {
+            glow: '0 0 35px rgba(39, 212, 255, .22)',
+            clinical: '0 0 28px rgba(36, 242, 166, .20)'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    :root { color-scheme: dark; }
+    * { -webkit-tap-highlight-color: transparent; }
+    body {
+      background:
+        radial-gradient(circle at 15% 10%, rgba(39, 212, 255, .16), transparent 28rem),
+        radial-gradient(circle at 80% 0%, rgba(36, 242, 166, .12), transparent 30rem),
+        linear-gradient(135deg, #090d16 0%, #0b1120 45%, #070a12 100%);
+      min-height: 100vh;
+      font-family: Tahoma, Arial, sans-serif;
+    }
+    .glass {
+      background: linear-gradient(145deg, rgba(16, 24, 39, .88), rgba(13, 19, 32, .78));
+      border: 1px solid rgba(148, 163, 184, .18);
+      backdrop-filter: blur(18px);
+    }
+    .scanline::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(transparent 48%, rgba(39, 212, 255, .08) 50%, transparent 52%);
+      background-size: 100% 14px;
+      pointer-events: none;
+      border-radius: inherit;
+    }
+    .pulse-ring { animation: pulseRing 1.6s infinite; }
+    @keyframes pulseRing {
+      0% { box-shadow: 0 0 0 0 rgba(255,77,109,.55); }
+      70% { box-shadow: 0 0 0 18px rgba(255,77,109,0); }
+      100% { box-shadow: 0 0 0 0 rgba(255,77,109,0); }
+    }
+    .ticker { animation: ticker 22s linear infinite; }
+    @keyframes ticker { from { transform: translateX(-20%); } to { transform: translateX(100%); } }
+    .phone-shell { border-radius: 2.25rem; box-shadow: inset 0 0 0 9px #020617, 0 28px 70px rgba(0,0,0,.55); }
+    .chart-box canvas { width: 100% !important; max-height: 210px; }
+    @media (max-width: 1023px) {
+      .view-pane[data-mobile-hidden="true"] { display: none; }
+    }
+  </style>
+</head>
+<body class="text-slate-100 overflow-x-hidden">
+  <div id="toastStack" class="fixed top-4 left-4 z-50 flex w-[calc(100%-2rem)] max-w-md flex-col gap-3"></div>
+
+  <header class="sticky top-0 z-40 border-b border-white/10 bg-command/85 backdrop-blur-xl">
+    <div class="mx-auto flex max-w-[1800px] flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex items-center gap-3">
+        <div class="grid h-12 w-12 place-items-center rounded-2xl border border-clinical/40 bg-clinical/10 shadow-clinical">
+          <i class="fa-solid fa-user-nurse text-2xl text-clinical"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-black tracking-wide text-white sm:text-2xl">منصة التمريض الافتراضي الموحدة</h1>
+          <p class="text-xs text-slate-400 sm:text-sm">Virtual Nursing Command Center • CBAHI Ready • NCA ECC Aligned</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 text-xs sm:flex sm:items-center">
+        <button id="showBothBtn" class="rounded-xl border border-neon/30 bg-neon/10 px-3 py-2 font-bold text-neon lg:hidden">عرض الواجهتين</button>
+        <button id="mobileToggleBtn" class="rounded-xl border border-clinical/30 bg-clinical/10 px-3 py-2 font-bold text-clinical lg:hidden">تبديل للجوال</button>
+        <button id="codeBlueBtn" class="rounded-xl bg-danger px-4 py-2 font-black text-white shadow-lg shadow-danger/20"><i class="fa-solid fa-truck-medical ml-2"></i>Code Blue</button>
+        <button id="resetBtn" class="rounded-xl border border-white/15 bg-white/5 px-4 py-2 font-bold text-slate-200"><i class="fa-solid fa-rotate-right ml-2"></i>إعادة التهيئة</button>
+      </div>
+    </div>
+    <div class="overflow-hidden border-t border-white/5 bg-black/25 py-2 text-xs text-slate-300">
+      <div id="auditTicker" class="ticker whitespace-nowrap">جاهزية تشغيلية: مراقبة العلامات الحيوية كل 2 ثانية • توليد FHIR v4 تلقائياً • سجل تدقيق غير قابل للتلاعب • مصادقة ثنائية لتسليم الوردية</div>
+    </div>
+  </header>
+
+  <main class="mx-auto grid max-w-[1800px] gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_430px]">
+    <section id="commandView" class="view-pane space-y-4" data-mobile-hidden="false">
+      <div class="grid gap-4 xl:grid-cols-4">
+        <div class="glass rounded-3xl p-4 shadow-glow xl:col-span-3">
+          <div class="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 class="text-xl font-black"><i class="fa-solid fa-tower-broadcast ml-2 text-neon"></i>لوحة تحكم مركز القيادة</h2>
+              <p class="text-sm text-slate-400">مراقبة غرف الجناح، كشف التدهور، التوثيق الذكي، والقبول/الخروج.</p>
+            </div>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="rounded-full border border-clinical/30 bg-clinical/10 px-3 py-1 text-clinical"><i class="fa-solid fa-shield-halved ml-1"></i>NCA ECC</span>
+              <span class="rounded-full border border-neon/30 bg-neon/10 px-3 py-1 text-neon"><i class="fa-solid fa-award ml-1"></i>CBAHI</span>
+              <span id="stableCount" class="rounded-full border border-white/10 bg-white/5 px-3 py-1"></span>
+            </div>
+          </div>
+          <div id="patientGrid" class="grid gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
+        </div>
+
+        <aside class="glass rounded-3xl p-4">
+          <h3 class="mb-3 font-black"><i class="fa-solid fa-gauge-high ml-2 text-amber"></i>MEWS Engine</h3>
+          <div id="mewsPanel" class="space-y-3"></div>
+          <div class="mt-4 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs leading-6 text-slate-300">
+            <p class="font-bold text-white">قاعدة الإنذار:</p>
+            <p>SpO₂ &lt; 92% أو HR &gt; 120 bpm ⟵ Push Notification فوري للممرض الميداني.</p>
+          </div>
+        </aside>
+      </div>
+
+      <div class="grid gap-4 xl:grid-cols-2">
+        <section class="glass rounded-3xl p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="font-black"><i class="fa-solid fa-wave-square ml-2 text-clinical"></i>مخطط العلامات الحيوية اللحظية</h3>
+            <span id="selectedPatientLabel" class="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300"></span>
+          </div>
+          <div class="chart-box rounded-2xl border border-white/10 bg-black/25 p-3"><canvas id="vitalsChart"></canvas></div>
+        </section>
+
+        <section class="glass rounded-3xl p-4">
+          <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h3 class="font-black"><i class="fa-solid fa-microphone-lines ml-2 text-neon"></i>Ambient AI Documentation</h3>
+            <button id="startAmbientBtn" class="rounded-xl bg-neon/15 px-3 py-2 text-xs font-bold text-neon">بدء التقاط المحادثة</button>
+          </div>
+          <div class="grid gap-3 md:grid-cols-2">
+            <div class="rounded-2xl border border-white/10 bg-black/25 p-3">
+              <p class="mb-2 text-xs font-bold text-slate-400">Transcript Streaming</p>
+              <div id="transcriptBox" class="h-48 overflow-y-auto rounded-xl bg-command/70 p-3 text-sm leading-7 text-slate-200">اضغط بدء التقاط المحادثة لمحاكاة الاستماع السريري داخل الغرفة.</div>
+            </div>
+            <div class="rounded-2xl border border-white/10 bg-black/25 p-3">
+              <p class="mb-2 text-xs font-bold text-slate-400">SOAP Draft</p>
+              <pre id="soapBox" class="h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-command/70 p-3 text-xs leading-5 text-slate-200">No AI draft generated yet.</pre>
+              <button id="signSoapBtn" class="mt-3 w-full rounded-xl bg-clinical/15 px-3 py-2 text-xs font-black text-clinical"><i class="fa-solid fa-signature ml-2"></i>اعتماد وتوقيع رقمي إلى EHR</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="grid gap-4 xl:grid-cols-2">
+        <section class="glass rounded-3xl p-4">
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="font-black"><i class="fa-solid fa-code ml-2 text-amber"></i>FHIR Payload Inspector</h3>
+            <span class="rounded-full border border-amber/30 bg-amber/10 px-3 py-1 text-xs text-amber">HL7 FHIR R4</span>
+          </div>
+          <pre id="fhirBox" dir="ltr" class="max-h-80 overflow-auto rounded-2xl border border-white/10 bg-[#020617] p-4 text-left text-xs leading-5 text-emerald-100"></pre>
+        </section>
+
+        <section class="glass rounded-3xl p-4">
+          <h3 class="mb-3 font-black"><i class="fa-solid fa-clipboard-check ml-2 text-clinical"></i>Shift Handover MFA • SBAR</h3>
+          <div class="grid gap-3 md:grid-cols-2">
+            <textarea id="sbarInput" class="min-h-44 rounded-2xl border border-white/10 bg-black/25 p-3 text-sm outline-none focus:border-clinical" placeholder="Situation, Background, Assessment, Recommendation"></textarea>
+            <div class="space-y-3">
+              <div class="rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">
+                <p><b class="text-white">OTP التجريبي:</b> <span id="otpValue" class="font-mono text-clinical"></span></p>
+                <p class="mt-2 text-xs">يجب إدخال الرمز لإتمام البصمة الرقمية القانونية لتسليم الوردية.</p>
+              </div>
+              <input id="otpInput" maxlength="6" class="w-full rounded-xl border border-white/10 bg-black/25 p-3 text-center font-mono text-lg tracking-[.35em] outline-none focus:border-neon" placeholder="000000" />
+              <button id="handoverBtn" class="w-full rounded-xl bg-clinical px-4 py-3 font-black text-command">إتمام التسليم وتوقيع MFA</button>
+              <div id="handoverStatus" class="text-sm text-slate-400"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <aside id="bedsideView" class="view-pane" data-mobile-hidden="false">
+      <div class="phone-shell sticky top-28 mx-auto max-w-[430px] overflow-hidden border border-white/10 bg-slate-950 p-4">
+        <div class="mx-auto mb-3 h-1.5 w-24 rounded-full bg-slate-800"></div>
+        <div class="rounded-[1.75rem] border border-white/10 bg-gradient-to-b from-[#101827] to-[#060913] p-4">
+          <div class="mb-4 flex items-center justify-between">
+            <div>
+              <h2 class="font-black">Bedside Companion</h2>
+              <p class="text-xs text-slate-400">تطبيق ممرض الميدان</p>
+            </div>
+            <div id="phoneSignal" class="rounded-full bg-clinical/15 px-3 py-1 text-xs font-bold text-clinical"><i class="fa-solid fa-wifi ml-1"></i>Online</div>
+          </div>
+
+          <div id="pushNotification" class="mb-4 hidden rounded-2xl border border-danger/40 bg-danger/15 p-3 pulse-ring">
+            <div class="flex items-start gap-3">
+              <i class="fa-solid fa-triangle-exclamation mt-1 text-danger"></i>
+              <div>
+                <p class="font-black text-danger">تنبيه تدهور فوري</p>
+                <p id="pushText" class="text-sm text-slate-200"></p>
+                <button id="ackPushBtn" class="mt-2 rounded-lg bg-danger px-3 py-1 text-xs font-bold text-white">استلام البلاغ</button>
+              </div>
+            </div>
+          </div>
+
+          <section class="mb-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+            <h3 class="mb-3 text-sm font-black"><i class="fa-solid fa-bell ml-2 text-amber"></i>التنبيهات العاجلة</h3>
+            <div id="alertList" class="space-y-2 text-sm"></div>
+          </section>
+
+          <section class="mb-4 rounded-2xl border border-white/10 bg-black/20 p-3">
+            <h3 class="mb-3 text-sm font-black"><i class="fa-solid fa-syringe ml-2 text-neon"></i>Double-Check High-Risk Drugs</h3>
+            <label class="mb-1 block text-xs text-slate-400">المريض</label>
+            <select id="drugPatientSelect" class="mb-2 w-full rounded-xl border border-white/10 bg-command p-2 text-sm"></select>
+            <label class="mb-1 block text-xs text-slate-400">الدواء عالي الخطورة</label>
+            <select id="drugSelect" class="mb-3 w-full rounded-xl border border-white/10 bg-command p-2 text-sm">
+              <option>Heparin 5,000 units SQ</option>
+              <option>Regular Insulin Sliding Scale</option>
+              <option>Potassium Chloride IV</option>
+              <option>Warfarin 5 mg PO</option>
+            </select>
+            <button id="requestDoubleCheckBtn" class="w-full rounded-xl bg-neon/15 px-4 py-3 font-black text-neon">طلب مطابقة سحابية</button>
+          </section>
+
+          <section id="cameraPanel" class="relative mb-4 hidden overflow-hidden rounded-2xl border border-neon/30 bg-black p-3 scanline">
+            <div class="relative z-10">
+              <div class="mb-2 flex items-center justify-between text-xs">
+                <span class="text-neon"><i class="fa-solid fa-video ml-1"></i>Virtual Room Camera</span>
+                <span class="rounded-full bg-red-500/20 px-2 py-1 text-red-300">LIVE</span>
+              </div>
+              <div class="grid h-36 place-items-center rounded-xl border border-white/10 bg-slate-900/80">
+                <div class="text-center">
+                  <i class="fa-solid fa-barcode mb-2 text-5xl text-white"></i>
+                  <p id="barcodeText" class="font-mono text-xs text-slate-300">RX-0000</p>
+                </div>
+              </div>
+              <button id="approveDrugBtn" class="mt-3 w-full rounded-xl bg-clinical px-3 py-2 font-black text-command">موافقة الممرض الافتراضي</button>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-white/10 bg-black/20 p-3">
+            <h3 class="mb-3 text-sm font-black"><i class="fa-solid fa-comments ml-2 text-clinical"></i>تواصل فوري مع المركز</h3>
+            <div id="chatBox" class="mb-3 h-32 overflow-y-auto rounded-xl bg-command/70 p-3 text-xs leading-6 text-slate-200"></div>
+            <div class="flex gap-2">
+              <input id="chatInput" class="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/25 p-2 text-sm outline-none focus:border-clinical" placeholder="اكتب رسالة..." />
+              <button id="sendChatBtn" class="rounded-xl bg-clinical px-3 font-bold text-command"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const baselinePatients = [
+      { id: 'P-102938', name: 'Aisha Al-Qahtani', room: 'A-1201', age: 64, diagnosis: 'Community acquired pneumonia', meds: ['Ceftriaxone', 'Azithromycin', 'Enoxaparin'], hr: 94, spo2: 95, temp: 37.4, status: 'Stable', admissionStatus: 'Admitted', mews: 1, history: [] },
+      { id: 'P-204455', name: 'Khalid Al-Harbi', room: 'A-1202', age: 58, diagnosis: 'Post-op CABG monitoring', meds: ['Heparin', 'Aspirin', 'Metoprolol'], hr: 108, spo2: 94, temp: 37.0, status: 'Watch', admissionStatus: 'Admitted', mews: 2, history: [] },
+      { id: 'P-772010', name: 'Mona Al-Otaibi', room: 'A-1203', age: 71, diagnosis: 'COPD exacerbation', meds: ['Salbutamol', 'Prednisone', 'Insulin'], hr: 116, spo2: 92, temp: 37.8, status: 'Watch', admissionStatus: 'Admitted', mews: 3, history: [] },
+      { id: 'P-889120', name: 'Saleh Al-Dosari', room: 'A-1204', age: 47, diagnosis: 'DKA step-down care', meds: ['Regular Insulin', 'IV Fluids', 'Potassium'], hr: 102, spo2: 97, temp: 36.9, status: 'Stable', admissionStatus: 'Admitted', mews: 1, history: [] },
+      { id: 'P-337701', name: 'Noura Al-Zahrani', room: 'A-1205', age: 35, diagnosis: 'High-risk pregnancy observation', meds: ['Labetalol', 'Magnesium sulfate'], hr: 88, spo2: 98, temp: 36.8, status: 'Stable', admissionStatus: 'Admitted', mews: 0, history: [] },
+      { id: 'P-556620', name: 'Fahad Al-Shammari', room: 'A-1206', age: 76, diagnosis: 'Sepsis pathway', meds: ['Piperacillin/Tazobactam', 'Norepinephrine'], hr: 119, spo2: 93, temp: 38.2, status: 'Watch', admissionStatus: 'Admitted', mews: 4, history: [] }
+    ];
+
+    let patients = [];
+    let selectedPatientId = 'P-102938';
+    let chart;
+    let simTimer;
+    let transcriptTimer;
+    let otp = String(Math.floor(100000 + Math.random() * 900000));
+    const alerts = [];
+    const auditEvents = [];
+
+    const $ = (id) => document.getElementById(id);
+    const clonePatients = () => baselinePatients.map(p => ({ ...p, history: [] }));
+    const nowTime = () => new Date().toLocaleTimeString('en-GB', { hour12: false });
+    const addAudit = (type, detail) => {
+      auditEvents.unshift({ time: new Date().toISOString(), type, detail, actor: 'VirtualNurse@CommandCenter' });
+      auditEvents.splice(20);
+      $('auditTicker').textContent = `${nowTime()} • ${type}: ${detail} • CBAHI/NCA audit trail active • HL7 FHIR R4 updated`;
+    };
+
+    function init() {
+      patients = clonePatients();
+      otp = String(Math.floor(100000 + Math.random() * 900000));
+      $('otpValue').textContent = otp;
+      $('sbarInput').value = 'S: Virtual ward operationally stable, one COPD patient under close watch.\nB: Dual-nursing model active with live command center monitoring.\nA: Continue MEWS surveillance and high-risk medication double-checks.\nR: Escalate any SpO2 < 92% or HR > 120 bpm immediately.';
+      alerts.length = 0;
+      addAudit('SYSTEM_RESET', 'Simulation state reset for executive demo');
+      patients.forEach(p => pushHistory(p));
+      renderAll();
+      setupChart();
+      clearInterval(simTimer);
+      simTimer = setInterval(simulateVitals, 2000);
+    }
+
+    function scorePatient(p) {
+      let score = 0;
+      if (p.hr > 120) score += 3; else if (p.hr > 110) score += 2; else if (p.hr > 100) score += 1;
+      if (p.spo2 < 90) score += 3; else if (p.spo2 < 92) score += 2; else if (p.spo2 < 94) score += 1;
+      if (p.temp >= 38) score += 1;
+      p.mews = score;
+      p.status = (p.spo2 < 92 || p.hr > 120) ? 'Warning' : score >= 3 ? 'Watch' : 'Stable';
+      return score;
+    }
+
+    function pushHistory(p) {
+      scorePatient(p);
+      p.history.push({ t: nowTime(), hr: Math.round(p.hr), spo2: Math.round(p.spo2), temp: Number(p.temp.toFixed(1)) });
+      if (p.history.length > 18) p.history.shift();
+    }
+
+    function simulateVitals() {
+      patients.forEach((p, idx) => {
+        const drift = idx === 2 && Math.random() > .55 ? -2.2 : 0;
+        const hrDrift = idx === 5 && Math.random() > .5 ? 4.2 : 0;
+        p.hr = Math.max(58, Math.min(138, p.hr + (Math.random() * 8 - 3) + hrDrift));
+        p.spo2 = Math.max(86, Math.min(100, p.spo2 + (Math.random() * 3 - 1.5) + drift));
+        p.temp = Math.max(36.1, Math.min(39.2, p.temp + (Math.random() * .35 - .14)));
+        const before = p.status;
+        pushHistory(p);
+        if (p.status === 'Warning' && before !== 'Warning') triggerClinicalAlert(p);
+      });
+      renderAll();
+      updateChart();
+    }
+
+    function triggerClinicalAlert(p) {
+      const text = `${p.name} • غرفة ${p.room}: HR ${Math.round(p.hr)} bpm / SpO₂ ${Math.round(p.spo2)}%`;
+      alerts.unshift({ id: crypto.randomUUID(), type: 'MEWS', text, time: nowTime(), severity: 'danger' });
+      alerts.splice(6);
+      $('pushNotification').classList.remove('hidden');
+      $('pushText').textContent = text;
+      addAudit('MEWS_ALERT', text);
+      toast('تنبيه تدهور سريري', text, 'danger');
+    }
+
+    function patientCard(p) {
+      const color = p.status === 'Warning' ? 'danger' : p.status === 'Watch' ? 'amber' : 'clinical';
+      const badgeClass = color === 'danger' ? 'bg-danger/15 text-danger' : color === 'amber' ? 'bg-amber/15 text-amber' : 'bg-clinical/15 text-clinical';
+      const statusText = p.status === 'Warning' ? 'غير مستقر' : p.status === 'Watch' ? 'مراقبة' : 'مستقر';
+      return `<article onclick="selectPatient('${p.id}')" class="cursor-pointer text-right rounded-3xl border ${selectedPatientId === p.id ? 'border-neon/70 bg-neon/10' : 'border-white/10 bg-black/20'} p-4 transition hover:-translate-y-1 hover:border-neon/40">
+        <div class="mb-3 flex items-start justify-between gap-2">
+          <div><p class="font-black text-white">${p.name}</p><p class="text-xs text-slate-400">${p.room} • ${p.id} • ${p.age} yrs • ${p.admissionStatus}</p></div>
+          <span class="rounded-full px-2 py-1 text-xs font-bold ${badgeClass}">${statusText}</span>
+        </div>
+        <p class="mb-3 text-xs text-slate-300">${p.diagnosis}</p>
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="rounded-2xl bg-white/5 p-2"><p class="text-xs text-slate-400">HR</p><p class="text-lg font-black">${Math.round(p.hr)}</p></div>
+          <div class="rounded-2xl bg-white/5 p-2"><p class="text-xs text-slate-400">SpO₂</p><p class="text-lg font-black">${Math.round(p.spo2)}%</p></div>
+          <div class="rounded-2xl bg-white/5 p-2"><p class="text-xs text-slate-400">Temp</p><p class="text-lg font-black">${p.temp.toFixed(1)}</p></div>
+        </div>
+        <div class="mt-3 flex flex-wrap gap-1">${p.meds.map(m => `<span class="rounded-full bg-white/5 px-2 py-1 text-[10px] text-slate-300">${m}</span>`).join('')}</div>
+        <div class="mt-3 grid grid-cols-2 gap-2">
+          <button onclick="event.stopPropagation();adtAction('${p.id}','admit')" class="rounded-xl border border-clinical/30 bg-clinical/10 px-2 py-2 text-xs font-bold text-clinical">قبول ADT^A01</button>
+          <button onclick="event.stopPropagation();adtAction('${p.id}','discharge')" class="rounded-xl border border-amber/30 bg-amber/10 px-2 py-2 text-xs font-bold text-amber">خروج ADT^A03</button>
+        </div>
+      </article>`;
+    }
+
+    function renderAll() {
+      $('patientGrid').innerHTML = patients.map(patientCard).join('');
+      $('stableCount').textContent = `${patients.filter(p => p.status === 'Stable').length} Stable / ${patients.length} Census`;
+      $('mewsPanel').innerHTML = patients.map(p => `<div class="rounded-2xl border border-white/10 bg-black/20 p-3">
+        <div class="flex items-center justify-between"><b>${p.room}</b><span class="font-mono text-lg ${p.status === 'Warning' ? 'text-danger' : p.status === 'Watch' ? 'text-amber' : 'text-clinical'}">MEWS ${p.mews}</span></div>
+        <div class="mt-2 h-2 rounded-full bg-white/10"><div class="h-2 rounded-full ${p.status === 'Warning' ? 'bg-danger' : p.status === 'Watch' ? 'bg-amber' : 'bg-clinical'}" style="width:${Math.min(100, p.mews * 22 + 14)}%"></div></div>
+      </div>`).join('');
+      $('drugPatientSelect').innerHTML = patients.map(p => `<option value="${p.id}">${p.room} - ${p.name}</option>`).join('');
+      $('alertList').innerHTML = alerts.length ? alerts.map(a => `<div class="rounded-xl border border-danger/30 bg-danger/10 p-2"><p class="font-bold text-danger">${a.type} • ${a.time}</p><p>${a.text}</p></div>`).join('') : '<p class="rounded-xl bg-white/5 p-3 text-slate-400">لا توجد تنبيهات نشطة حالياً.</p>';
+      renderFhir();
+      const p = patients.find(x => x.id === selectedPatientId) || patients[0];
+      $('selectedPatientLabel').textContent = `${p.room} • ${p.name}`;
+    }
+
+    window.selectPatient = function(id) {
+      selectedPatientId = id;
+      addAudit('PATIENT_CONTEXT', `Selected ${id}`);
+      renderAll();
+      updateChart();
+    };
+
+    window.adtAction = function(id, action) {
+      const patient = patients.find(x => x.id === id);
+      if (!patient) return;
+      patient.admissionStatus = action === 'discharge' ? 'Discharged' : 'Admitted';
+      selectedPatientId = id;
+      addAudit(action === 'discharge' ? 'ADT_A03_DISCHARGE' : 'ADT_A01_ADMISSION', `${patient.name} / ${patient.room}`);
+      toast(action === 'discharge' ? 'تم إجراء الخروج' : 'تم إجراء القبول', `${patient.name} • ${patient.admissionStatus}`, 'success');
+      renderAll();
+    };
+
+    function setupChart() {
+      const ctx = $('vitalsChart');
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: [], datasets: [
+          { label: 'HR bpm', data: [], borderColor: '#ff4d6d', backgroundColor: 'rgba(255,77,109,.08)', tension: .35 },
+          { label: 'SpO₂ %', data: [], borderColor: '#27d4ff', backgroundColor: 'rgba(39,212,255,.08)', tension: .35 },
+          { label: 'Temp °C', data: [], borderColor: '#24f2a6', backgroundColor: 'rgba(36,242,166,.08)', tension: .35, yAxisID: 'y1' }
+        ]},
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#cbd5e1' } } }, scales: { x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.08)' } }, y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.08)' }, min: 80, max: 140 }, y1: { position: 'right', ticks: { color: '#94a3b8' }, grid: { drawOnChartArea: false }, min: 35, max: 40 } } }
+      });
+      updateChart();
+    }
+
+    function updateChart() {
+      if (!chart) return;
+      const p = patients.find(x => x.id === selectedPatientId) || patients[0];
+      chart.data.labels = p.history.map(h => h.t.slice(-8));
+      chart.data.datasets[0].data = p.history.map(h => h.hr);
+      chart.data.datasets[1].data = p.history.map(h => h.spo2);
+      chart.data.datasets[2].data = p.history.map(h => h.temp);
+      chart.update('none');
+    }
+
+    function buildFhirBundle(p) {
+      return {
+        resourceType: 'Bundle', type: 'transaction', timestamp: new Date().toISOString(),
+        meta: { profile: ['https://hl7.org/fhir/R4/bundle.html'], security: [{ system: 'urn:sa:nca:ecc', code: 'protected-health-information' }] },
+        entry: [
+          { fullUrl: `urn:uuid:${p.id}`, resource: { resourceType: 'Patient', id: p.id, identifier: [{ system: 'urn:sa:national-id', value: p.id }], name: [{ text: p.name }], age: p.age } },
+          { resource: { resourceType: 'Encounter', status: p.status === 'Warning' ? 'in-progress' : 'arrived', class: { code: 'IMP', display: 'inpatient encounter' }, subject: { reference: `Patient/${p.id}` }, location: [{ location: { display: p.room } }] } },
+          { resource: { resourceType: 'Observation', status: 'final', code: { text: 'Heart rate' }, valueQuantity: { value: Math.round(p.hr), unit: 'beats/minute' }, subject: { reference: `Patient/${p.id}` } } },
+          { resource: { resourceType: 'Observation', status: 'final', code: { text: 'Oxygen saturation' }, valueQuantity: { value: Math.round(p.spo2), unit: '%' }, subject: { reference: `Patient/${p.id}` } } },
+          { resource: { resourceType: 'MessageHeader', eventCoding: { system: 'urn:hl7-org:v2', code: p.admissionStatus === 'Discharged' ? 'ADT^A03' : 'ADT^A01' }, source: { name: 'Virtual Nursing Command Center' } } }
+        ]
+      };
+    }
+
+    function renderFhir() {
+      const p = patients.find(x => x.id === selectedPatientId) || patients[0];
+      $('fhirBox').textContent = JSON.stringify(buildFhirBundle(p), null, 2);
+    }
+
+    function toast(title, msg, variant = 'info') {
+      const color = variant === 'danger' ? 'danger' : variant === 'success' ? 'clinical' : 'neon';
+      const colorClass = color === 'danger' ? 'border-danger/30 text-danger' : color === 'clinical' ? 'border-clinical/30 text-clinical' : 'border-neon/30 text-neon';
+      const el = document.createElement('div');
+      el.className = `glass rounded-2xl p-4 shadow-glow ${colorClass}`;
+      el.innerHTML = `<p class="font-black">${title}</p><p class="text-sm text-slate-200">${msg}</p>`;
+      $('toastStack').appendChild(el);
+      setTimeout(() => el.remove(), 5000);
+    }
+
+    const transcriptLines = [
+      '00:01 Nurse: Good morning, can you tell me how your breathing feels today?',
+      '00:04 Patient: I feel more short of breath when walking to the bathroom.',
+      '00:08 Nurse: Any chest pain, fever, or dizziness?',
+      '00:11 Patient: No chest pain, but I had chills last night.',
+      '00:15 Nurse: Your oxygen saturation is 92% and heart rate is 116. I will notify the virtual nurse.',
+      '00:21 Patient: Thank you, I also coughed yellow sputum this morning.'
+    ];
+
+    $('startAmbientBtn').addEventListener('click', () => {
+      clearInterval(transcriptTimer);
+      $('transcriptBox').textContent = '';
+      $('soapBox').textContent = 'Listening...';
+      let i = 0;
+      transcriptTimer = setInterval(() => {
+        $('transcriptBox').textContent += transcriptLines[i] + '\n';
+        $('transcriptBox').scrollTop = $('transcriptBox').scrollHeight;
+        i++;
+        if (i >= transcriptLines.length) {
+          clearInterval(transcriptTimer);
+          $('soapBox').textContent = `S: Patient reports increased shortness of breath on exertion, chills overnight, and productive cough with yellow sputum. Denies chest pain or dizziness.\n\nO: Current SpO2 92%, HR 116 bpm. Patient is alert and speaking in full sentences with mild exertional dyspnea.\n\nA: COPD/pneumonia patient with possible early respiratory deterioration. MEWS surveillance indicated.\n\nP: Notify virtual nurse, repeat vital signs in 15 minutes, maintain ordered oxygen therapy, encourage sputum sample collection, escalate if SpO2 drops below 92% or HR exceeds 120 bpm.`;
+          addAudit('AMBIENT_AI_SOAP', 'SOAP draft generated from simulated transcript');
+          toast('تم إنشاء مسودة SOAP', 'جاهزة للاعتماد والتوقيع الرقمي.', 'success');
+        }
+      }, 900);
+    });
+
+    $('signSoapBtn').addEventListener('click', () => {
+      addAudit('EHR_SIGN', 'Ambient AI SOAP note digitally signed and pushed to EHR');
+      toast('EHR Updated', 'تم اعتماد التقرير وتوقيعه رقمياً.', 'success');
+    });
+
+    $('requestDoubleCheckBtn').addEventListener('click', () => {
+      const p = patients.find(x => x.id === $('drugPatientSelect').value);
+      const drug = $('drugSelect').value;
+      $('cameraPanel').classList.remove('hidden');
+      $('barcodeText').textContent = `${p.id}-${drug.replaceAll(' ', '-').slice(0, 18).toUpperCase()}`;
+      addAudit('HIGH_RISK_MED_CHECK', `Bedside requested double-check for ${drug} / ${p.room}`);
+      toast('طلب مطابقة دواء', `${drug} للمريض ${p.name}`, 'info');
+    });
+
+    $('approveDrugBtn').addEventListener('click', () => {
+      const drug = $('drugSelect').value;
+      addAudit('CLOUD_APPROVAL', `${drug} digitally approved by virtual nurse`);
+      toast('تمت الموافقة السحابية', `يمكن إعطاء ${drug} بأمان.`, 'success');
+      $('cameraPanel').classList.add('hidden');
+    });
+
+    $('codeBlueBtn').addEventListener('click', () => {
+      const active = $('codeBlueBtn').dataset.active === 'true';
+      if (active) {
+        $('codeBlueBtn').dataset.active = 'false';
+        $('codeBlueBtn').innerHTML = '<i class="fa-solid fa-truck-medical ml-2"></i>Code Blue';
+        addAudit('CODE_BLUE_CANCELLED', 'General emergency cancelled by command center');
+        toast('Code Blue Cancelled', 'تم إلغاء النداء العام.', 'success');
+      } else {
+        $('codeBlueBtn').dataset.active = 'true';
+        $('codeBlueBtn').innerHTML = '<i class="fa-solid fa-ban ml-2"></i>إلغاء Code Blue';
+        alerts.unshift({ id: crypto.randomUUID(), type: 'CODE BLUE', text: 'نداء طارئ عام: فريق الإنعاش إلى الجناح A فوراً', time: nowTime(), severity: 'danger' });
+        $('pushNotification').classList.remove('hidden');
+        $('pushText').textContent = 'CODE BLUE: فريق الإنعاش إلى الجناح A فوراً';
+        addAudit('CODE_BLUE', 'General emergency call activated');
+        toast('CODE BLUE', 'تم إرسال نداء طارئ عام لجميع الأجهزة.', 'danger');
+        renderAll();
+      }
+    });
+
+    $('ackPushBtn').addEventListener('click', () => {
+      $('pushNotification').classList.add('hidden');
+      addAudit('PUSH_ACK', 'Bedside nurse acknowledged urgent notification');
+      toast('تم استلام البلاغ', 'تم توثيق الاستلام في سجل التدقيق.', 'success');
+    });
+
+    $('handoverBtn').addEventListener('click', () => {
+      if ($('otpInput').value.trim() === otp) {
+        $('handoverStatus').innerHTML = `<span class="text-clinical font-bold">تم التسليم بنجاح ${nowTime()} • Digital legal signature recorded.</span>`;
+        addAudit('SHIFT_HANDOVER_MFA', 'SBAR handover completed with OTP verification');
+        toast('Shift Handover Complete', 'تم توثيق التسليم بالمصادقة الثنائية.', 'success');
+      } else {
+        $('handoverStatus').innerHTML = '<span class="text-danger font-bold">رمز OTP غير صحيح. لم يتم التوقيع.</span>';
+        addAudit('MFA_FAILED', 'Invalid OTP attempted for shift handover');
+      }
+    });
+
+    $('sendChatBtn').addEventListener('click', () => {
+      const msg = $('chatInput').value.trim();
+      if (!msg) return;
+      $('chatBox').innerHTML += `<p><b class="text-clinical">Bedside:</b> ${msg}</p><p><b class="text-neon">Command:</b> Received. Continue protocol and document response.</p>`;
+      $('chatInput').value = '';
+      $('chatBox').scrollTop = $('chatBox').scrollHeight;
+      addAudit('SECURE_CHAT', 'Bedside message exchanged with command center');
+    });
+
+    $('resetBtn').addEventListener('click', init);
+
+    $('mobileToggleBtn').addEventListener('click', () => {
+      const commandHidden = $('commandView').dataset.mobileHidden === 'true';
+      $('commandView').dataset.mobileHidden = commandHidden ? 'false' : 'true';
+      $('bedsideView').dataset.mobileHidden = commandHidden ? 'true' : 'false';
+      $('mobileToggleBtn').textContent = commandHidden ? 'عرض الهاتف' : 'عرض المركز';
+    });
+    $('showBothBtn').addEventListener('click', () => {
+      $('commandView').dataset.mobileHidden = 'false';
+      $('bedsideView').dataset.mobileHidden = 'false';
+    });
+
+    window.addEventListener('load', init);
+  </script>
+</body>
+</html>
