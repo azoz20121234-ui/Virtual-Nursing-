@@ -111,10 +111,13 @@ Five findings drive every downstream conclusion:
 
 Version note: the official MIMIC documentation site states *"The latest version of MIMIC-IV is
 v2.2"* **[DOC]**, and the OMR/`poe_detail` value tables in that documentation are explicitly
-"as of MIMIC-IV v2.2". PhysioNet currently distributes a later version (v3.x). **Row counts, value
-sets and `itemid` assignments in this audit are anchored to v2.2 and must be re-verified against
-whichever version is actually used. [VERIFY]** In particular, `itemid` values for laboratory
-measurements are known to have changed between releases; any analysis must pin an exact version.
+"as of MIMIC-IV v2.2". However, the MIMIC Code Repository — updated far more recently — refers to
+release-specific derived datasets such as `physionet-data.mimiciv_3_1_derived` on BigQuery **[DOC]**,
+confirming that **v3.1 is a current release and the documentation site is stale on version
+numbering**. **Row counts, value sets and `itemid` assignments in this audit are anchored to v2.2 and
+must be re-verified against whichever version is actually used. [VERIFY]** In particular, `itemid`
+values for laboratory measurements are known to have changed between releases; any analysis must pin
+an exact version.
 
 ### Structure **[DOC]**
 
@@ -155,11 +158,20 @@ measurements are known to have changed between releases; any analysis must pin a
 | `ed.diagnosis` | `seq_num, icd_code, icd_title` | ED | |
 | `ed.pyxis` | `charttime, name, gsn` | ED | Dispensing records. |
 
-**Coverage discontinuity to verify:** MIMIC-IV covers 2008–2019 **[DOC]**; the documentation does not
-state the MIMIC-IV-ED coverage window, and ED data are not available for all MIMIC-IV years
-**[VERIFY]**. Because MIMIC-IV-ED is the *only* source of non-admitted ED visits, any post-discharge
-ED-visit outcome is undefined for index discharges outside the ED-module coverage window. **This must
-be resolved before any cohort is drawn.**
+**Coverage discontinuity — RESOLVED, and it constrains the cohort.** The MIMIC Code Repository README
+states the coverage windows explicitly **[DOC]**:
+
+- MIMIC-IV — *"hospital and critical care data for patients admitted to the ED or ICU between
+  **2008 - 2019**"*
+- MIMIC-IV-ED — *"emergency department data for individuals attending the ED between **2011 - 2019**"*
+
+**[INF] Consequence:** MIMIC-IV-ED is the *only* source of non-admitted ED visits, so for index
+discharges occurring in **2008–2010 the post-discharge ED-visit outcome is undefined, not negative**.
+Treating those index stays as "no ED visit" would fabricate three years of false negatives.
+**Any cohort must be restricted to index discharges from 2011 onward whenever an ED-visit outcome (or
+an acute-care-utilisation composite containing one) is used.** Because dates are patient-shifted, this
+restriction must be applied via `anchor_year_group` rather than raw `dischtime` **[PROP]**, and the
+resulting loss of index stays should be reported in the cohort flow diagram.
 
 ---
 
@@ -278,14 +290,14 @@ Classification is per dataset. "Timing" states availability relative to T0 = dis
 | F | Laboratory results | ✔ | `labevents` (+ reference ranges) | pre-T0 and post-T0 | **DIRECT** | Outpatient labs present with NULL `hadm_id` **[DOC]**. |
 | G | Vital signs | ⚠ | `icu.chartevents` (**ICU only**), `ed.triage`, `ed.vitalsign`, `omr` (BP) | pre-T0 | **PARTIAL / NOT AVAILABLE on wards** | **No ward vital signs exist in MIMIC-IV** **[INF from DOC]**. |
 | H | Prior utilisation | ✔ | prior `admissions` rows, prior `edstays` | pre-T0 | **DIRECT (within BIDMC)** | Left truncation at cohort start and at first BIDMC contact **[INF]**. |
-| I | ED encounters | ✔ | `ed.edstays` (incl. non-admitted) | pre- and post-T0 | **DIRECT** | Coverage window vs MIMIC-IV years **[VERIFY]**. |
+| I | ED encounters | ✔ | `ed.edstays` (incl. non-admitted) | pre- and post-T0 | **DIRECT, 2011–2019 only** | ED module covers 2011–2019 vs MIMIC-IV's 2008–2019 **[DOC]**; outcome undefined for 2008–2010 index stays. |
 | J | Mortality | ⚠ | `patients.dod`, `admissions.deathtime`, `hospital_expire_flag` | post-T0 | **PARTIAL** | Censored at 1 year post-discharge; MA registry linkage only **[DOC]**. |
 | K | Discharge destination | ✔ | `discharge_location` | at T0 | **DIRECT** | |
 | L | Length of stay | ✔ | `dischtime − admittime`; `icustays.los` | at T0 | **DIRECT** | |
 | M | Readmission measurement | ⚠ | subsequent `admissions.admittime` | post-T0 | **PARTIAL (observed only)** | Intervals valid because shifting is per-patient **[DOC]**. |
 | N | Clinical notes | ⚠ | `note.discharge`, `note.radiology` | at/after T0 | **PARTIAL** | Sections deleted (§4). |
 | O | Nursing documentation | ✘ | — | — | **NOT AVAILABLE** | No nursing notes in MIMIC-IV-Note **[DOC]**. ICU bedside flowsheet rows exist in `chartevents` **[DOC]** but are not nursing assessment documents. |
-| P | Functional status | ✘ | — | — | **NOT AVAILABLE** (hospital-wide); **UNCERTAIN** for ICU `d_items` **[VERIFY]** | |
+| P | Functional status | ✘ | — | — | **NOT AVAILABLE** (hospital-wide); **UNCERTAIN** for ICU `d_items` **[VERIFY]** | Corroborating: the official MIMIC Code Repository concept library contains no functional, mobility, Braden, ADL or delirium/CAM-ICU concept for MIMIC-IV — only `measurement/gcs.sql` and `firstday/first_day_gcs.sql` **[DOC]**. |
 | Q | Cognition | ⚠ | `chartevents` GCS / RASS (ICU only) **[DOC]** | pre-T0 | **PROXY (ICU only)** | Sedation confounds GCS as a cognition measure **[INF]**. |
 | R | Mobility | ✘ | — | — | **NOT AVAILABLE / UNCERTAIN** **[VERIFY]** | |
 | S | ADL information | ✘ | — | — | **NOT AVAILABLE** | |
@@ -582,7 +594,7 @@ already covered by M2's outcomes and adds nothing new. **DO NOT TEST YET.**
 | Outcome | Class | Construction (if measurable) |
 |---|---|---|
 | **30-day readmission (PRIMARY)** | **PARTIALLY MEASURABLE** | Index = `admissions` row with `hospital_expire_flag = 0` and `discharge_location NOT IN ('DIED','HOSPICE')`. T0 = `dischtime`. Outcome = 1 if ∃ another `admissions` row, same `subject_id`, with `admittime > T0` and `admittime ≤ T0 + 30 days`. Exclude organ-donor admissions (documented short/negative LOS artefacts **[DOC]**). Exclude index stays whose `discharge_location = 'ACUTE HOSPITAL'` (transfer out, follow-up not observable) **[PROP]**. Planned-readmission exclusion is *partially* implementable from `procedures_icd` **[PROP]**; the full CMS planned-readmission algorithm cannot be reproduced exactly **[VERIFY]**. **Must be reported as "readmission observed at BIDMC".** |
-| **ED visit (post-discharge)** | **PARTIALLY MEASURABLE** | `edstays.intime ∈ (T0, T0+30d]`, including visits with NULL `hadm_id` (not admitted) **[DOC]**. Restrict the cohort to index discharges inside the MIMIC-IV-ED coverage window **[VERIFY]**; otherwise outcome status is undefined rather than negative. |
+| **ED visit (post-discharge)** | **PARTIALLY MEASURABLE, 2011–2019 index stays only** | `edstays.intime ∈ (T0, T0+30d]`, including visits with NULL `hadm_id` (not admitted) **[DOC]**. **Mandatory restriction:** MIMIC-IV-ED covers 2011–2019 while MIMIC-IV covers 2008–2019 **[DOC]**, so index discharges in 2008–2010 have an *undefined*, not negative, ED outcome and must be excluded. |
 | **Mortality (30 / 90-day)** | **PARTIALLY MEASURABLE** | `patients.dod ∈ (T0, T0+30d]` or `(T0, T0+90d]`. **Documented limits:** deaths beyond one year post-discharge are censored **[DOC]**; ascertainment relies on Massachusetts state records plus hospital records **[DOC]**, so out-of-state deaths are systematically missed **[INF]**. Report ascertainment as incomplete; do not report crude mortality as if complete. |
 | **Acute-care utilisation (composite)** | **PARTIALLY MEASURABLE** | Union of readmission and ED visit within the window. Inherits both bounds. |
 | **Complications** | **NOT MEASURABLE** | No present-on-admission flag **[DOC, by absence]**; ICD codes are assigned post-discharge **[DOC]**. |
@@ -885,16 +897,21 @@ PhysioNet credentialed access to MIMIC-IV, MIMIC-IV-ED and MIMIC-IV-Note, and si
 the exact version, DOI and citation of each dataset **from the PhysioNet landing page** — the DOIs in
 this document are deliberately left as *requires verification*.
 
-**Step 2 — Close the seven open `[VERIFY]` items** (schema-only queries; no modelling):
+**Step 2 — Close the remaining six `[VERIFY]` items** (schema-only queries; no modelling). Item 2 was
+resolved during this audit and is retained below with its cohort consequence:
 
 1. Exact MIMIC-IV version obtained, and its documented differences from v2.2 (row counts, `itemid`
    stability, `omr`/`poe_detail` value sets).
-2. **MIMIC-IV-ED coverage window** vs the MIMIC-IV admission years — determines for which index
-   discharges an ED-visit outcome is even defined.
+2. ~~MIMIC-IV-ED coverage window~~ — **RESOLVED**: MIMIC-IV-ED covers **2011–2019**, MIMIC-IV covers
+   2008–2019 **[DOC]**. Carry the resulting cohort restriction (index discharges from 2011 onward
+   whenever an ED-based outcome is used) into the pre-registration.
 3. Whether a discharge-medication section survives deidentification in `note.discharge` (sample and
    count sections present).
 4. Enumerate `d_items` for any functional, mobility, ADL, delirium or nursing-assessment concept;
-   quantify coverage among ICU stays. **Expectation from this audit: little or nothing usable.**
+   quantify coverage among ICU stays. **Expectation from this audit: little or nothing usable** — the
+   official MIMIC concept library contains only GCS concepts and nothing for function, mobility,
+   Braden, ADL or delirium **[DOC]**. (Absence from the concept library is strong corroboration but
+   is not proof of absence from `d_items`; the enumeration still has to be run.)
 5. `poe_detail` `Discharge Planning` / `Discharge When` — full value distributions and their timing
    relative to `dischtime`; determine whether either is a usable T0 anchor.
 6. Empirical rule for excluding organ-donor admissions; feasibility of a partial planned-readmission
@@ -937,6 +954,9 @@ Documentation consulted (retrieved 2026-09-01):
   hcpcsevents,index}.md`, `modules/icu/{icustays,chartevents,procedureevents}.md`,
   `modules/ed/{index,edstays,triage,vitalsign,diagnosis,pyxis,medrecon}.md`,
   `modules/note/{index,discharge,discharge_detail}.md`.
+- **Official MIMIC Code Repository**, `github.com/MIT-LCP/mimic-code` (checked out at its 2026-09-01
+  head) — used for the dataset coverage windows in `README.md` and for the derived-concept inventory
+  under `mimic-iv/concepts/`.
 - **Official eICU-CRD documentation**, source repository `github.com/MIT-LCP/eicu-code`
   (`website/content/`) — the upstream source of `eicu-crd.mit.edu`. Files used:
   `eicutables/{patient,carePlanGeneral,nurseAssessment,nurseCare,note,hospital,apachePredVar,
