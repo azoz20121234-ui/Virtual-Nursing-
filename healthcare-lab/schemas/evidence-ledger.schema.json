@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Healthcare Evidence Ledger",
+  "type": "object",
+  "required": ["claims"],
+  "properties": {
+    "claims": {"type":"array","items":{"type":"object","required":["claim_id","source_id","source_type","study_design","population","intervention","comparator","outcome","effect","certainty","access_level","retrieval_timestamp","provenance","contradictions"],"properties":{
+      "claim_id":{"type":"string"},"source_id":{"type":"string"},"source_type":{"type":"string"},"study_design":{"type":"string"},"population":{},"intervention":{},"comparator":{},"outcome":{},"effect":{},"certainty":{"type":"string"},"access_level":{"type":"string"},"retrieval_timestamp":{"type":"string","format":"date-time"},"provenance":{"type":"object","minProperties":1},"contradictions":{"type":"array","items":{"type":"string"}}
+    }}}
+  }
+}
