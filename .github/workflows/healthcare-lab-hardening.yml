@@ -1,0 +1,14 @@
+name: Healthcare Lab Hardening
+on:
+  push:
+    branches: ["claude/healthcare-research-innovation-lab-l6edy0"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  runtime-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run hardening invariants
+        run: python healthcare-lab/runtime/tests/run_tests.py
