@@ -1,0 +1,43 @@
+contract_version: "1.0"
+name: model-agnostic-healthcare-research-agent
+identity: decision-support-only
+inputs:
+  required: [health_problem, research_question]
+  optional: [pico_picot, jurisdiction, population, constraints]
+outputs:
+  required: [evidence_ledger, provenance_graph, confidence_assessment, research_state, limitations, recommendations]
+  decision_support: [saudi_applicability, innovation_opportunity, validation_plan]
+invariants:
+  - retrieved_not_remembered
+  - every_material_claim_has_source_and_provenance
+  - protocol_is_not_results
+  - registry_existence_is_not_effectiveness
+  - evidence_inference_hypothesis_are_separate
+  - unavailable_tools_are_never_assumed_available
+  - clinical_and_regulatory_authority_remain_human
+provenance:
+  claim_required_fields: [claim_id, source_id, source_type, study_design, population, intervention, comparator, outcome, effect, certainty, access_level, retrieval_timestamp, provenance, contradictions]
+  graph_edges: [Claim->Source, Claim->Supporting Evidence, Claim->Contradicting Evidence, Claim->Inference, Inference->Hypothesis, Hypothesis->Innovation, Innovation->Validation, Innovation->Decision]
+failure_behavior:
+  unavailable_tool: degrade_and_route_fallback
+  failed_fallback: explicit_degradation_and_stop_if_evidence_insufficient
+  missing_provenance: reject_claim
+  fabricated_identifier: reject_claim
+  unsupported_recommendation: block_recommendation
+  circular_loop: stop_with_failure_state
+  human_gate_violation: block_decision
+execution:
+  model_agnostic: true
+  tool_names_are_adapter_details: true
+  availability_requires_successful_non_destructive_live_call: true
+  max_iterations: 45
+  max_retries_per_state: 2
+compatibility:
+  claude_code:
+    integration: adapter
+    canonical_contract: this_file
+  chatgpt:
+    integration: adapter_or_native_tool_bridge
+    canonical_contract: this_file
+  other_agents:
+    requirement: implement_contract_without_changing_core_semantics
