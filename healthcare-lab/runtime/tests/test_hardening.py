@@ -7,6 +7,7 @@ from evidence_ledger import EvidenceLedger, Claim, now_utc
 from provenance import ProvenanceGraph
 from confidence import ConfidenceEngine
 from human_gates import HumanGatePolicy, GateDecision
+from validation import validate_identifier, validate_effect_for_source, validate_recommendation
 
 def test_unavailable_and_fallback():
     r=CapabilityRegistry(); r.register(ToolAdapter('primary','search',1,lambda p: (_ for _ in ()).throw(RuntimeError('down')),lambda: True)); r.register(ToolAdapter('fallback','search',2,lambda p:['ok'],lambda: True))
@@ -16,7 +17,12 @@ def test_unavailable_tool():
     r=CapabilityRegistry(); x=r.execute('search',{}); assert not x.ok and x.confidence_penalty=='source_degradation'
 
 def test_protocol_not_results():
-    ledger=EvidenceLedger(); c=Claim('C1','PMID:protocol','protocol','RCT protocol','HF','remote','usual care','CV admission','NOT_AVAILABLE','n/a','abstract',now_utc(),{'retrieval':'live'},[]); ledger.add(c); assert c.effect=='NOT_AVAILABLE'
+    try: validate_effect_for_source('protocol','RR 0.80') ; assert False
+    except ValueError as e: assert 'protocol' in str(e)
+
+def test_fabricated_identifier():
+    try: validate_identifier('999999999', {'verified_identifiers':['12345']}); assert False
+    except ValueError as e: assert 'fabricated' in str(e)
 
 def test_conflict_penalty():
     a=ConfidenceEngine().assess(quality='HIGH',consistency='HIGH',directness='HIGH',precision='MODERATE',replication='LOW',contradiction=True)
@@ -33,12 +39,17 @@ def test_missing_provenance():
 def test_human_gate():
     p=HumanGatePolicy(); g=p.require('go_no_go',['C1']); assert g['decision']==GateDecision.PENDING.value and g['requires_human']; assert p.enforce(g,False)['decision']==GateDecision.REJECTED.value
 
+def test_human_gate_violation():
+    try: validate_recommendation({'supporting_claim_ids':['C1'],'requires_human_gate':True}); assert False
+    except ValueError as e: assert 'human_gate' in str(e)
+
+def test_unsupported_recommendation():
+    try: validate_recommendation({}); assert False
+    except ValueError as e: assert 'unsupported' in str(e)
+
 def test_provenance_edges():
     g=ProvenanceGraph(); g.add('C1','S1','Claim->Source'); g.add('C1','I1','Claim->Inference'); g.add('I1','H1','Inference->Hypothesis'); assert not g.validate()
 
 def test_unsupported_relation():
     try: ProvenanceGraph().add('a','b','unsupported'); assert False
     except ValueError: pass
-
-# Fabricated PMID/DOI and unsupported recommendations are blocked by contract validation:
-# identifiers must be returned by a live source adapter; recommendations require linked claims.
