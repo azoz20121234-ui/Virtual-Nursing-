@@ -1,12 +1,12 @@
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from healthcare_lab.runtime.capability_resolver import CapabilityRegistry, ToolAdapter
-from healthcare_lab.runtime.state_machine import ResearchStateMachine, ResearchState
-from healthcare_lab.runtime.evidence_ledger import EvidenceLedger, Claim, now_utc
-from healthcare_lab.runtime.provenance import ProvenanceGraph
-from healthcare_lab.runtime.confidence import ConfidenceEngine
-from healthcare_lab.runtime.human_gates import HumanGatePolicy, GateDecision
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from capability_resolver import CapabilityRegistry, ToolAdapter
+from state_machine import ResearchStateMachine, ResearchState
+from evidence_ledger import EvidenceLedger, Claim, now_utc
+from provenance import ProvenanceGraph
+from confidence import ConfidenceEngine
+from human_gates import HumanGatePolicy, GateDecision
 
 def test_unavailable_and_fallback():
     r=CapabilityRegistry(); r.register(ToolAdapter('primary','search',1,lambda p: (_ for _ in ()).throw(RuntimeError('down')),lambda: True)); r.register(ToolAdapter('fallback','search',2,lambda p:['ok'],lambda: True))
@@ -26,7 +26,7 @@ def test_circular_loop():
     m=ResearchStateMachine(); m.transition(ResearchState.QUESTION); m.transition(ResearchState.PICO); m.transition(ResearchState.SEARCH); assert m.transition(ResearchState.QUESTION)==ResearchState.FAILED
 
 def test_missing_provenance():
-    ledger=EvidenceLedger();
+    ledger=EvidenceLedger()
     try: ledger.add(Claim('C1','x','journal','RCT','p','i','c','o','e','LOW','abstract',now_utc(),{},[])); assert False
     except ValueError as e: assert 'provenance' in str(e)
 
