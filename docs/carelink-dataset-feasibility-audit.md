@@ -725,7 +725,7 @@ comparison a false precision.
 | 10 | Social information | **NOT SUITABLE** — Social History removed **[DOC]** | **WEAK-to-MODERATE** — care-plan proxy/psychosocial fields **[DOC]** |
 | 11 | Monitoring information | **MODERATE (in-hospital ICU)**; **NOT SUITABLE (post-discharge)** | **STRONG (in-hospital ICU)**; **NOT SUITABLE (post-discharge)** |
 | 12 | Escalation information | **NOT SUITABLE** | **NOT SUITABLE** |
-| 13 | Sample size | **STRONG** — 431,231 admissions / 299,712 patients at v2.2; larger in v3.x **[DOC for v2.2; VERIFY for v3.x]** | **STRONG** — 200,859 unit stays / 139,367 patients **[DOC]** |
+| 13 | Sample size | **STRONG** — **546,028 admissions / 364,627 patients / 94,458 ICU stays** in the current release, per the official build-validation script **[DOC]** (was 431,231 / 299,712 / 73,181 at v2.2 **[DOC]**). MIMIC-IV-ED: **425,087** ED stays **[DOC]**. | **STRONG** — 200,859 unit stays / 139,367 patients **[DOC]** |
 | 14 | External reproducibility | **WEAK** — single centre **[DOC]** | **STRONG in principle** (208 hospitals) but unusable for this design **[DOC]** |
 | 15 | Documentation quality | **STRONG** — per-table docs, changelog, peer-reviewed paper | **STRONG** — per-table docs with explicit completeness warnings |
 
@@ -900,13 +900,18 @@ this document are deliberately left as *requires verification*.
 **Step 2 — Close the remaining six `[VERIFY]` items** (schema-only queries; no modelling). Item 2 was
 resolved during this audit and is retained below with its cohort consequence:
 
-1. Exact MIMIC-IV version obtained, and its documented differences from v2.2 (row counts, `itemid`
-   stability, `omr`/`poe_detail` value sets).
+1. Exact MIMIC-IV version obtained, and its documented differences from v2.2. **Partly resolved:** the
+   official build-validation script expects **546,028 admissions, 364,627 patients, 94,458 ICU stays**
+   in the current release **[DOC]** — roughly +27% admissions and +22% patients over v2.2, so any
+   v2.2-era power calculation is conservative. Still open: `itemid` stability and whether the
+   `omr` / `poe_detail` value sets quoted here (which are "as of v2.2") have changed.
 2. ~~MIMIC-IV-ED coverage window~~ — **RESOLVED**: MIMIC-IV-ED covers **2011–2019**, MIMIC-IV covers
    2008–2019 **[DOC]**. Carry the resulting cohort restriction (index discharges from 2011 onward
    whenever an ED-based outcome is used) into the pre-registration.
 3. Whether a discharge-medication section survives deidentification in `note.discharge` (sample and
-   count sections present).
+   count sections present). **Confirmed unanswerable without the data:** the official code repository's
+   `mimic-iv-note` folder contains only build/load scripts and table schemas — no section inventory or
+   parser **[DOC]**.
 4. Enumerate `d_items` for any functional, mobility, ADL, delirium or nursing-assessment concept;
    quantify coverage among ICU stays. **Expectation from this audit: little or nothing usable** — the
    official MIMIC concept library contains only GCS concepts and nothing for function, mobility,
@@ -915,9 +920,17 @@ resolved during this audit and is retained below with its cohort consequence:
 5. `poe_detail` `Discharge Planning` / `Discharge When` — full value distributions and their timing
    relative to `dischtime`; determine whether either is a usable T0 anchor.
 6. Empirical rule for excluding organ-donor admissions; feasibility of a partial planned-readmission
-   exclusion from `procedures_icd`.
+   exclusion from `procedures_icd`. **Warning established during this audit:** the well-known
+   MIMIC-III recipe filters on `admissions.diagnosis NOT LIKE '%organ donor%'` **[DOC]**, but
+   **MIMIC-IV's `admissions` table has no `diagnosis` column** — it was removed in the MIMIC-III →
+   MIMIC-IV transition **[DOC]**. Any code ported from MIMIC-III will therefore fail to exclude these
+   accounts, silently leaving short/negative-LOS artefacts with duplicated `deathtime` in the cohort.
+   The exclusion must instead be rebuilt from the documented signature (very short or negative LOS;
+   `deathtime` equal to an earlier admission's `deathtime`) **[PROP]**.
 7. eICU `hospitalDischargeLocation` full value set (for the secondary construct-availability audit
-   only).
+   only). **Confirmed not publicly documented:** the table documentation gives only examples ("Home,
+   Nursing Home, Death, etc.") and the official DDL declares it merely as `VARCHAR(100)` **[DOC]**.
+   The value set can only be recovered from the data itself, post-credentialing.
 
 **Step 3 — Pre-register the only two defensible questions** before touching outcome data:
 
